@@ -106,6 +106,13 @@ pub fn post_initialize(
 pub fn deposit(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let cfg = CONFIG.load(deps.storage)?;
     let launch_cfg = cfg.launch_config.unwrap();
+
+    if env.block.time.seconds() < launch_cfg.phase1_start {
+        return Err(ContractError::InvalidDeposit {
+            reason: "deposit period did not start yet".to_string(),
+        });
+    }
+
     if env.block.time.seconds() >= launch_cfg.phase2_start {
         return Err(ContractError::InvalidDeposit {
             reason: "deposit period is over".to_string(),
