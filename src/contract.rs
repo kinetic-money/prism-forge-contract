@@ -15,7 +15,7 @@ use cw_asset::{Asset, AssetInfo};
 
 pub const SECONDS_PER_HOUR: u64 = 60 * 60;
 
-const CONTRACT_NAME: &str = "prism-fair-launch";
+const CONTRACT_NAME: &str = "prism-forge";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
