@@ -512,7 +512,8 @@ fn proper_withdraw_phase3() {
     assert_eq!(
         err,
         ContractError::InvalidWithdraw {
-            reason: "can not withdraw more than current withrawable amount (100000000)".to_string()
+            reason: "can not withdraw more than current withdrawable amount (100000000)"
+                .to_string()
         }
     );
 
