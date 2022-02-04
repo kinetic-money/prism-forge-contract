@@ -201,7 +201,7 @@ pub fn withdraw(
             if requested_amount > withdrawable_amount {
                 return Err(ContractError::InvalidWithdraw {
                     reason: format!(
-                        "can not withdraw more than current withrawable amount ({})",
+                        "can not withdraw more than current withdrawable amount ({})",
                         withdrawable_amount
                     ),
                 });
