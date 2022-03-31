@@ -3,7 +3,7 @@ name = "prism-forge"
 version = "1.0.0"
 edition = "2018"
 description = "Prism Forge contract"
-license = "Apache-2.0"
+license = "MariaDB"
 
 exclude = [
     # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
