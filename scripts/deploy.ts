@@ -38,6 +38,8 @@ async function main() {
     console.log("Deploying forge...");
     CONFIGURATION.forge_InitMsg.config.owner = wallet.key.accAddress;
     CONFIGURATION.forge_InitMsg.config.receiver = wallet.key.accAddress;
+    CONFIGURATION.forge_InitMsg.config.token =
+      CONFIGURATION.tokenContractAddress;
 
     console.log(CONFIGURATION.forge_InitMsg);
     network.forge_address = await deployContract(

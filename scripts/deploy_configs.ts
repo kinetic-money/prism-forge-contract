@@ -3,7 +3,7 @@ export const testnet: Config = {
     config: {
       owner: undefined,
       receiver: undefined,
-      token: "terra19vzpr6pstw074ahyxyf73yj8hgvm60mwp0xsrf",
+      token: undefined,
       base_denom: "uusd",
     },
   },
@@ -22,7 +22,7 @@ interface ForgeInitMsg {
   config: {
     owner?: string;
     receiver?: string;
-    token: string;
+    token?: string;
     base_denom: string;
   };
 }
