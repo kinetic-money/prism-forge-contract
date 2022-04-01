@@ -7,11 +7,12 @@ use crate::msg::{
 use crate::querier::query_balance;
 use cosmwasm_std::{
     attr, entry_point, to_binary, Binary, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Response, StdResult, Uint128, WasmMsg,
+    Order, Response, StdResult, Uint128, WasmMsg,
 };
 use cw2::set_contract_version;
 use cw20::Cw20ExecuteMsg;
 use cw_asset::{Asset, AssetInfo};
+use cw_storage_plus::Bound;
 
 pub const SECONDS_PER_HOUR: u64 = 60 * 60;
 
@@ -357,6 +358,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::DepositInfo { address } => to_binary(&query_deposit_info(deps, env, address)?),
+        QueryMsg::Deposits { start_after, limit } => {
+            to_binary(&query_deposits(deps, env, start_after, limit)?)
+        }
     }
 }
 
@@ -410,4 +414,64 @@ pub fn query_deposit_info(deps: Deps, env: Env, address: String) -> StdResult<De
             && cfg.tokens_released
             && !deposit_info.tokens_claimed,
     })
+}
+
+// Default settings for pagination
+const MAX_LIMIT: u32 = 30;
+const DEFAULT_LIMIT: u32 = 10;
+
+pub fn query_deposits(
+    deps: Deps,
+    env: Env,
+    start_after: Option<String>,
+    limit: Option<u32>,
+) -> StdResult<Vec<DepositResponse>> {
+    let cfg = CONFIG.load(deps.storage)?;
+    let launch_config = cfg.launch_config.clone().unwrap();
+    let total_deposit = TOTAL_DEPOSIT.load(deps.storage)?;
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let start = start_after.map(Bound::exclusive);
+    let current_time = env.block.time.seconds();
+
+    DEPOSITS
+        .range(deps.storage, start, None, Order::Ascending)
+        .take(limit)
+        .map(|item| {
+            let (_, v) = item?;
+            let withdrawable_amount = if current_time > launch_config.phase2_start
+                && !v.amount.is_zero()
+            {
+                if v.withdrew_phase2 || current_time >= launch_config.phase2_end {
+                    Uint128::zero()
+                } else {
+                    let current_slot = (launch_config.phase2_end - current_time) / SECONDS_PER_HOUR;
+                    let total_slots =
+                        (launch_config.phase2_end - launch_config.phase2_start) / SECONDS_PER_HOUR;
+
+                    let withdrawable_portion =
+                        Decimal::from_ratio(current_slot + 1u64, total_slots).min(Decimal::one());
+
+                    v.amount * withdrawable_portion
+                }
+            } else {
+                v.amount
+            };
+            let tokens_to_claim = if !total_deposit.is_zero() {
+                launch_config.amount.multiply_ratio(v.amount, total_deposit)
+            } else {
+                Uint128::zero()
+            };
+
+            Ok(DepositResponse {
+                deposit: v.amount,
+                total_deposit,
+                withdrawable_amount,
+                tokens_to_claim,
+                can_claim: current_time >= launch_config.phase2_end
+                    && !tokens_to_claim.is_zero()
+                    && cfg.tokens_released
+                    && !v.tokens_claimed,
+            })
+        })
+        .collect()
 }
