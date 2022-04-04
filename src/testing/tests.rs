@@ -99,6 +99,24 @@ pub fn do_query_deposit_info(deps: Deps, env: Env, address: String) -> StdResult
 }
 
 #[test]
+fn proper_initialize() {
+    let mut deps = mock_dependencies(&[]);
+    let msg = InstantiateMsg {
+        operator: "owner0001".to_string(),
+        receiver: "receiver0000".to_string(),
+        token: "prism0001".to_string(),
+        base_denom: "uusd".to_string(),
+        host_portion: Decimal::percent(110),
+        host_portion_receiver: "host0000".to_string(),
+    };
+
+    let info = mock_info("owner0001", &[]);
+    let env = mock_env();
+    let err = instantiate(deps.as_mut(), env, info, msg).unwrap_err();
+    assert_eq!(err, ContractError::InvalidHostPortion {})
+}
+
+#[test]
 fn proper_post_initialize() {
     let mut deps = mock_dependencies(&[]);
     init(&mut deps);
@@ -161,9 +179,21 @@ fn proper_post_initialize() {
     );
     assert_eq!(err.unwrap_err(), ContractError::InvalidLaunchConfig {});
 
+    // invalid launch config (slot period is zero)
+    info.sender = Addr::unchecked("owner0001");
+    launch_config.phase2_slot_period = 0u64;
+    let err = do_post_initialize(
+        deps.as_mut(),
+        env.clone(),
+        info.clone(),
+        launch_config.clone(),
+    );
+    assert_eq!(err.unwrap_err(), ContractError::InvalidLaunchConfig {});
+
     // success
     launch_config.phase1_start = env.block.time.seconds();
     launch_config.phase2_end = env.block.time.seconds() + 100 + SECONDS_PER_HOUR;
+    launch_config.phase2_slot_period = SECONDS_PER_HOUR;
     let res = do_post_initialize(
         deps.as_mut(),
         env.clone(),
@@ -228,7 +258,18 @@ fn proper_deposit() {
     let mut info = mock_info("addr0001", &[]);
     let mut env = mock_env();
 
+    // failed deposit, before phase 1
+    env.block.time = env.block.time.minus_seconds(150u64);
+    let err = do_deposit(deps.as_mut(), env.clone(), info.clone());
+    assert_eq!(
+        err.unwrap_err(),
+        ContractError::InvalidDeposit {
+            reason: "deposit period did not start yet".to_string()
+        }
+    );
+
     // error, no coins sent with deposit
+    env.block.time = env.block.time.plus_seconds(150u64);
     let err = do_deposit(deps.as_mut(), env.clone(), info.clone());
     assert_eq!(
         err.unwrap_err(),
