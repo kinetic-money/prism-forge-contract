@@ -2,23 +2,27 @@ use cosmwasm_std::testing::{
     mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MOCK_CONTRACT_ADDR,
 };
 use cosmwasm_std::{
-    attr, from_binary, to_binary, Addr, BankMsg, Coin, CosmosMsg, Deps, DepsMut, Env,
+    attr, from_binary, to_binary, Addr, BankMsg, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env,
     MemoryStorage, MessageInfo, OwnedDeps, Response, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use cw20::Cw20ExecuteMsg;
 
-use crate::contract::{deposit, execute, instantiate, query, release_tokens, SECONDS_PER_HOUR};
+use crate::contract::{deposit, execute, instantiate, query, release_tokens};
 use crate::error::ContractError;
 use crate::msg::{
     ConfigResponse, DepositResponse, ExecuteMsg, InstantiateMsg, LaunchConfig, QueryMsg,
 };
 
+const SECONDS_PER_HOUR: u64 = 60 * 60;
+
 pub fn init(deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier>) {
     let msg = InstantiateMsg {
-        owner: "owner0001".to_string(),
+        operator: "owner0001".to_string(),
         receiver: "receiver0000".to_string(),
         token: "prism0001".to_string(),
         base_denom: "uusd".to_string(),
+        host_portion: Decimal::zero(),
+        host_portion_receiver: "host0000".to_string(),
     };
 
     let info = mock_info("owner0001", &[]);
@@ -34,6 +38,7 @@ pub fn post_init(deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier>) {
         phase1_start: env.block.time.seconds(),
         phase2_start: env.block.time.seconds() + 100,
         phase2_end: env.block.time.seconds() + 100 + SECONDS_PER_HOUR,
+        phase2_slot_period: SECONDS_PER_HOUR,
     };
     do_post_initialize(deps.as_mut(), env, info, launch_config).unwrap();
 }
@@ -103,12 +108,14 @@ fn proper_post_initialize() {
     assert_eq!(
         config_response,
         ConfigResponse {
-            owner: "owner0001".to_string(),
+            operator: "owner0001".to_string(),
             receiver: "receiver0000".to_string(),
             token: "prism0001".to_string(),
             launch_config: None,
             base_denom: "uusd".to_string(),
             tokens_released: false,
+            host_portion: Decimal::zero(),
+            host_portion_receiver: "host0000".to_string(),
         }
     );
 
@@ -119,6 +126,7 @@ fn proper_post_initialize() {
         phase1_start: env.block.time.seconds(),
         phase2_start: env.block.time.seconds() + 100,
         phase2_end: env.block.time.seconds() + 100 + SECONDS_PER_HOUR,
+        phase2_slot_period: SECONDS_PER_HOUR,
     };
 
     // unauthorized
@@ -191,12 +199,14 @@ fn proper_post_initialize() {
     assert_eq!(
         config_response,
         ConfigResponse {
-            owner: "owner0001".to_string(),
+            operator: "owner0001".to_string(),
             receiver: "receiver0000".to_string(),
             token: "prism0001".to_string(),
             launch_config: Some(launch_config.clone()),
             base_denom: "uusd".to_string(),
             tokens_released: false,
+            host_portion: Decimal::zero(),
+            host_portion_receiver: "host0000".to_string(),
         }
     );
 
@@ -470,6 +480,7 @@ fn proper_withdraw_phase3() {
         phase1_start: env.block.time.seconds(),
         phase2_start: env.block.time.seconds() + 100,
         phase2_end: env.block.time.seconds() + 100 + 24 * SECONDS_PER_HOUR, // 24 hour phase 2
+        phase2_slot_period: SECONDS_PER_HOUR,
     };
     do_post_initialize(deps.as_mut(), mock_env(), info, launch_config).unwrap();
 
@@ -917,7 +928,9 @@ fn proper_admin_withdraw() {
         res.attributes,
         vec![
             attr("action", "admin_withdraw"),
-            attr("withdraw_amount", "6000"),
+            attr("total_withdraw_amount", "6000"),
+            attr("host_amount", "0"),
+            attr("remaining_amount", "6000"),
         ]
     );
     assert_eq!(
@@ -957,5 +970,81 @@ fn proper_admin_withdraw() {
             tokens_to_claim: Uint128::from(166666u128), // 1000000 * 1000 / 6000
             can_claim: true,                      // now users can claim tokens
         }
+    );
+}
+
+#[test]
+fn proper_admin_withdraw_with_host() {
+    let mut deps = mock_dependencies(&[]);
+
+    let msg = InstantiateMsg {
+        operator: "owner0001".to_string(),
+        receiver: "receiver0000".to_string(),
+        token: "prism0001".to_string(),
+        base_denom: "uusd".to_string(),
+        host_portion: Decimal::percent(10), // 10% host portion
+        host_portion_receiver: "host0000".to_string(),
+    };
+
+    let owner_info = mock_info("owner0001", &[]);
+    let mut env = mock_env();
+    instantiate(deps.as_mut(), env.clone(), owner_info.clone(), msg).unwrap();
+
+    post_init(&mut deps);
+
+    let mut info1 = mock_info("addr0001", &[]);
+    let mut info2 = mock_info("addr0002", &[]);
+
+    // successful deposits -- total 6,000 uusd
+    info1.funds = vec![Coin::new(1_000, "uusd")];
+    let res = do_deposit(deps.as_mut(), env.clone(), info1.clone());
+    assert_eq!(res.unwrap().messages.len(), 0);
+
+    info2.funds = vec![Coin::new(5_000, "uusd")];
+    let res = do_deposit(deps.as_mut(), env.clone(), info2);
+    assert_eq!(res.unwrap().messages.len(), 0);
+
+    // update contract balance after deposits
+    deps.querier.update_balance(
+        MOCK_CONTRACT_ADDR.to_string(),
+        vec![Coin::new(6_000, "uusd")],
+    );
+
+    // fast forward past phase 2
+    env.block.time = env.block.time.plus_seconds(100 + SECONDS_PER_HOUR);
+
+    // now admin can withdraw uusd -- unauthorized attempt
+    let err = do_admin_withdraw(deps.as_mut(), env.clone(), info1).unwrap_err();
+    assert_eq!(err, ContractError::Unauthorized {});
+
+    // valid attempt
+    let res = do_admin_withdraw(deps.as_mut(), env, owner_info).unwrap();
+    assert_eq!(
+        res.attributes,
+        vec![
+            attr("action", "admin_withdraw"),
+            attr("total_withdraw_amount", "6000"),
+            attr("host_amount", "600"),
+            attr("remaining_amount", "5400"),
+        ]
+    );
+    assert_eq!(
+        res.messages,
+        vec![
+            SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+                to_address: "host0000".to_string(), // host address specified on contract instantiation
+                amount: vec![Coin {
+                    denom: "uusd".to_string(),
+                    amount: Uint128::from(600u128), // 600
+                }],
+            })),
+            SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+                to_address: "receiver0000".to_string(), // receiver address specified on contract instantiation
+                amount: vec![Coin {
+                    denom: "uusd".to_string(),
+                    amount: Uint128::from(5400u128), // 5400
+                }],
+            }))
+        ]
     );
 }

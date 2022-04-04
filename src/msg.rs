@@ -1,4 +1,4 @@
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Decimal, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,14 +10,18 @@ pub struct LaunchConfig {
     // phase2: can withdraw one time. Allowed withdraw decreases 100% to 0% over time.
     pub phase2_start: u64,
     pub phase2_end: u64,
+    // time in seconds for each slot in phase2
+    pub phase2_slot_period: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub owner: String,
+    pub operator: String,
     pub receiver: String,
     pub token: String,
     pub base_denom: String,
+    pub host_portion: Decimal,
+    pub host_portion_receiver: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -40,12 +44,14 @@ pub enum QueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
-    pub owner: String,
+    pub operator: String,
     pub receiver: String,
     pub token: String,
     pub launch_config: Option<LaunchConfig>,
     pub base_denom: String,
     pub tokens_released: bool,
+    pub host_portion: Decimal,
+    pub host_portion_receiver: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
