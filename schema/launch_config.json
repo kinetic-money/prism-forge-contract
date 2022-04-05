@@ -6,6 +6,7 @@
     "amount",
     "phase1_start",
     "phase2_end",
+    "phase2_slot_period",
     "phase2_start"
   ],
   "properties": {
@@ -18,6 +19,11 @@
       "minimum": 0.0
     },
     "phase2_end": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "phase2_slot_period": {
       "type": "integer",
       "format": "uint64",
       "minimum": 0.0
