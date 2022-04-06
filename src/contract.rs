@@ -14,8 +14,6 @@ use cw20::Cw20ExecuteMsg;
 use cw_asset::{Asset, AssetInfo};
 use cw_storage_plus::Bound;
 
-pub const SECONDS_PER_HOUR: u64 = 60 * 60;
-
 const CONTRACT_NAME: &str = "prism-forge";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -28,13 +26,19 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
+    if msg.host_portion >= Decimal::one() {
+        return Err(ContractError::InvalidHostPortion {});
+    }
+
     let cfg = Config {
-        owner: deps.api.addr_validate(&msg.owner)?,
+        operator: deps.api.addr_validate(&msg.operator)?,
         receiver: deps.api.addr_validate(&msg.receiver)?,
         token: deps.api.addr_validate(&msg.token)?,
         launch_config: None,
         base_denom: msg.base_denom,
         tokens_released: false,
+        host_portion: msg.host_portion,
+        host_portion_receiver: deps.api.addr_validate(&msg.host_portion_receiver)?,
     };
     TOTAL_DEPOSIT.save(deps.storage, &Uint128::zero())?;
     CONFIG.save(deps.storage, &cfg)?;
@@ -67,7 +71,7 @@ pub fn post_initialize(
     launch_config: LaunchConfig,
 ) -> Result<Response, ContractError> {
     let mut cfg = CONFIG.load(deps.storage)?;
-    if info.sender.as_str() != cfg.owner.as_str() {
+    if info.sender != cfg.operator {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -82,8 +86,13 @@ pub fn post_initialize(
         return Err(ContractError::InvalidLaunchConfig {});
     }
 
-    // phase 2 must be longer than 1 hour, since we are using one hour slots
-    if (launch_config.phase2_end - launch_config.phase2_start) < SECONDS_PER_HOUR {
+    // phase 2 must be longer than the slot size
+    if (launch_config.phase2_end - launch_config.phase2_start) < launch_config.phase2_slot_period {
+        return Err(ContractError::InvalidLaunchConfig {});
+    }
+
+    // slot size can not be 0
+    if launch_config.phase2_slot_period == 0u64 {
         return Err(ContractError::InvalidLaunchConfig {});
     }
 
@@ -182,9 +191,10 @@ pub fn withdraw(
             });
         }
 
-        let current_slot = (launch_config.phase2_end - current_time) / SECONDS_PER_HOUR;
-        let total_slots =
-            (launch_config.phase2_end - launch_config.phase2_start) / SECONDS_PER_HOUR;
+        let current_slot =
+            (launch_config.phase2_end - current_time) / launch_config.phase2_slot_period;
+        let total_slots = (launch_config.phase2_end - launch_config.phase2_start)
+            / launch_config.phase2_slot_period;
         let withdrawable_portion =
             Decimal::from_ratio(current_slot + 1u64, total_slots).min(Decimal::one());
 
@@ -297,7 +307,7 @@ pub fn release_tokens(
     let mut cfg = CONFIG.load(deps.storage)?;
     let launch_cfg = cfg.launch_config.clone().unwrap();
 
-    if info.sender.as_str() != cfg.owner.as_str() {
+    if info.sender != cfg.operator {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -328,7 +338,7 @@ pub fn admin_withdraw(
     let cfg = CONFIG.load(deps.storage)?;
     let launch_cfg = cfg.launch_config.unwrap();
 
-    if info.sender.as_str() != cfg.owner.as_str() {
+    if info.sender != cfg.operator {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -339,17 +349,32 @@ pub fn admin_withdraw(
     }
 
     let balance = query_balance(&deps.querier, env.contract.address, cfg.base_denom.clone())?;
+    let host_portion = balance * cfg.host_portion;
 
-    let withdraw_asset = Asset {
-        info: AssetInfo::Native(cfg.base_denom),
-        amount: balance,
+    let base_denom_info = AssetInfo::Native(cfg.base_denom);
+    let host_withdraw_asset = Asset {
+        info: base_denom_info.clone(),
+        amount: host_portion,
+    };
+    let admin_withdraw_asset = Asset {
+        info: base_denom_info,
+        amount: balance - host_portion,
     };
 
-    // send the UST to the receiver specified in the contract config
-    let msg = withdraw_asset.transfer_msg(cfg.receiver)?;
-    Ok(Response::new().add_message(msg).add_attributes(vec![
+    let mut msgs: Vec<CosmosMsg> = vec![];
+    // because host_portion could be 0.0, check
+    if !host_withdraw_asset.amount.is_zero() {
+        msgs.push(host_withdraw_asset.transfer_msg(cfg.host_portion_receiver)?);
+    }
+
+    // send remaining amount to receiver
+    msgs.push(admin_withdraw_asset.transfer_msg(cfg.receiver)?);
+
+    Ok(Response::new().add_messages(msgs).add_attributes(vec![
         attr("action", "admin_withdraw"),
-        attr("withdraw_amount", balance.to_string()),
+        attr("total_withdraw_amount", balance.to_string()),
+        attr("host_amount", host_withdraw_asset.amount.to_string()),
+        attr("remaining_amount", admin_withdraw_asset.amount.to_string()),
     ]))
 }
 
@@ -382,9 +407,10 @@ pub fn query_deposit_info(deps: Deps, env: Env, address: String) -> StdResult<De
             if deposit_info.withdrew_phase2 || current_time >= launch_config.phase2_end {
                 Uint128::zero()
             } else {
-                let current_slot = (launch_config.phase2_end - current_time) / SECONDS_PER_HOUR;
-                let total_slots =
-                    (launch_config.phase2_end - launch_config.phase2_start) / SECONDS_PER_HOUR;
+                let current_slot =
+                    (launch_config.phase2_end - current_time) / launch_config.phase2_slot_period;
+                let total_slots = (launch_config.phase2_end - launch_config.phase2_start)
+                    / launch_config.phase2_slot_period;
 
                 let withdrawable_portion =
                     Decimal::from_ratio(current_slot + 1u64, total_slots).min(Decimal::one());

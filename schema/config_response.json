@@ -4,13 +4,21 @@
   "type": "object",
   "required": [
     "base_denom",
-    "owner",
+    "host_portion",
+    "host_portion_receiver",
+    "operator",
     "receiver",
     "token",
     "tokens_released"
   ],
   "properties": {
     "base_denom": {
+      "type": "string"
+    },
+    "host_portion": {
+      "$ref": "#/definitions/Decimal"
+    },
+    "host_portion_receiver": {
       "type": "string"
     },
     "launch_config": {
@@ -23,7 +31,7 @@
         }
       ]
     },
-    "owner": {
+    "operator": {
       "type": "string"
     },
     "receiver": {
@@ -37,12 +45,17 @@
     }
   },
   "definitions": {
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
+      "type": "string"
+    },
     "LaunchConfig": {
       "type": "object",
       "required": [
         "amount",
         "phase1_start",
         "phase2_end",
+        "phase2_slot_period",
         "phase2_start"
       ],
       "properties": {
@@ -55,6 +68,11 @@
           "minimum": 0.0
         },
         "phase2_end": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "phase2_slot_period": {
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0

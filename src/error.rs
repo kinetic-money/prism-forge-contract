@@ -15,6 +15,9 @@ pub enum ContractError {
     #[error("Invalid launch config")]
     InvalidLaunchConfig {},
 
+    #[error("Invalid host portion: it should be smaller than 1.0")]
+    InvalidHostPortion {},
+
     #[error("Invalid deposit: {reason}")]
     InvalidDeposit { reason: String },
 

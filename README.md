@@ -8,8 +8,8 @@ This contract provides functionality for executing a "fair launch" for distribut
 - **Withdraw**: Withdraw uusd into this contract, allowed during Phase1 and Phase2.
 - **WithdrawTokens**: Withdraw pro-rata allocated PRISM tokens, only allowed at the end of the launch (after Phase2).
 - **PostInitialize**: Initialize the contract's LaunchConfig parameters, which contains the total PRISM distribution amount and the phase start/end timestamps. Must be called by owner.
-- **AdminWithdraw**: Withdraw the contract's uusd balance at the end of the launch. Must be called by owner.
-- **ReleaseTokens**: Allows depositors to claim their share of the tokens. Must be called by owner.
+- **AdminWithdraw**: Withdraw the contract's uusd balance at the end of the launch. Must be called by the operator address.
+- **ReleaseTokens**: Allows depositors to claim their share of the tokens. Must be called by the operator address.
 
 ## QueryMsg:
 
@@ -54,7 +54,7 @@ For production builds, run the following:
 docker run --rm -v "$(pwd)":/code \
   --mount type=volume,source="$(basename "$(pwd)")_cache",target=/code/target \
   --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-  cosmwasm/rust-optimizer:0.11.5
+  cosmwasm/rust-optimizer:0.12.5
 ```
 
 This performs several optimizations which can significantly reduce the final size of the contract binaries, which will be available inside the `artifacts/` directory.
