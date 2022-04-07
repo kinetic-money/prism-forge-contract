@@ -36,8 +36,10 @@ async function main() {
   if (!network.forge_address) {
     /*************************************** Deploy forge Contract *****************************************/
     console.log("Deploying forge...");
-    CONFIGURATION.forge_InitMsg.config.owner = wallet.key.accAddress;
+    CONFIGURATION.forge_InitMsg.config.operator = wallet.key.accAddress;
     CONFIGURATION.forge_InitMsg.config.receiver = wallet.key.accAddress;
+    CONFIGURATION.forge_InitMsg.config.host_portion_receiver =
+      wallet.key.accAddress;
     CONFIGURATION.forge_InitMsg.config.token =
       CONFIGURATION.tokenContractAddress;
 
@@ -92,6 +94,8 @@ async function main() {
           phase1_start: CONFIGURATION.launch_config.config.phase1_start,
           phase2_start: CONFIGURATION.launch_config.config.phase2_start,
           phase2_end: CONFIGURATION.launch_config.config.phase2_end,
+          phase2_slot_period:
+            CONFIGURATION.launch_config.config.phase2_slot_period,
         },
       },
     };
