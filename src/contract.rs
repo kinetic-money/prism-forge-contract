@@ -470,9 +470,10 @@ pub fn query_deposits(
                 if v.withdrew_phase2 || current_time >= launch_config.phase2_end {
                     Uint128::zero()
                 } else {
-                    let current_slot = (launch_config.phase2_end - current_time) / SECONDS_PER_HOUR;
-                    let total_slots =
-                        (launch_config.phase2_end - launch_config.phase2_start) / SECONDS_PER_HOUR;
+                    let current_slot = (launch_config.phase2_end - current_time)
+                        / launch_config.phase2_slot_period;
+                    let total_slots = (launch_config.phase2_end - launch_config.phase2_start)
+                        / launch_config.phase2_slot_period;
 
                     let withdrawable_portion =
                         Decimal::from_ratio(current_slot + 1u64, total_slots).min(Decimal::one());
